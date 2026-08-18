@@ -1,0 +1,4 @@
+TikTokLive
+websockets
+kivy
+pyjnius
