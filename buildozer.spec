@@ -19,8 +19,8 @@ source.include_exts = py,png,jpg,kv,atlas,html
 version = 1.0
 
 # (list) Application requirements
-# TikTokLive dan websockets membutuhkan library pendukung agar bisa berjalan di Android
-requirements = python3,kivy,TikTokLive,websockets,pyjnius,asyncio,certifi,chardet,idna,urllib3,requests,aiohttp
+# Menghapus asyncio/requests/urllib3 agar tidak bentrok dengan modul internal Python 3 Android
+requirements = python3,kivy,openssl,sqlite3,pyjnius,TikTokLive,websockets,certifi,chardet,idna
 
 # (str) Icon of the application (Mengarahkan ke file icon.png di root folder)
 icon.filename = %(source.dir)s/icon.png
@@ -34,11 +34,17 @@ fullscreen = 0
 # (list) Permissions
 android.permissions = INTERNET,ACCESS_NETWORK_STATE
 
-# (int) Target Android API, should be as high as possible.
+# (int) Target Android API
 android.api = 33
 
-# (int) Minimum API your APK will support.
+# (int) Minimum API your APK will support
 android.minapi = 21
+
+# (str) Android build tools version to use
+android.build_tools_version = 33.0.2
+
+# (str) Android NDK version to use
+android.ndk = 25b
 
 # (str) Android logcat filters to use
 android.log_filters = *:S python:D
