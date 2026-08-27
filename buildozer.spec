@@ -6,8 +6,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,html
 version = 1.0
 
-# Kunci perbaikan: Menyederhanakan requirement library dasar
-requirements = python3,kivy,openssl,sqlite3,pyjnius,websockets,certifi,chardet,idna,TikTokLive
+# Hanya sertakan modul yang sudah memiliki recipe Android resmi
+requirements = python3,kivy,openssl,sqlite3,pyjnius,websockets,certifi,chardet,idna,urllib3,requests,TikTokLive
 
 icon.filename = %(source.dir)s/icon.png
 orientation = portrait
@@ -21,7 +21,6 @@ android.ndk = 25b
 android.log_filters = *:S python:D
 android.copy_libs = 1
 
-# Fokus kompilasi ke 1 arsitektur saja agar tidak timeout/out of memory
 android.archs = arm64-v8a
 
 [buildozer]
