@@ -1,5 +1,6 @@
-import asyncio
+import os
 import json
+import asyncio
 import threading
 import websockets
 from TikTokLive import TikTokLiveClient
@@ -27,7 +28,12 @@ CONNECTED_WEBSOCKETS = set()
 async def send_to_html(data_type: str, user: str, message: str = ""):
     if CONNECTED_WEBSOCKETS:
         payload = json.dumps({"type": data_type, "user": user, "message": message})
-        await asyncio.gather(*[ws.send(payload) for ws in CONNECTED_WEBSOCKETS])
+        # Mengirim data ke seluruh klien WebSocket yang terhubung
+        for ws in list(CONNECTED_WEBSOCKETS):
+            try:
+                await ws.send(payload)
+            except Exception:
+                pass
 
 async def start_tiktok(username: str):
     if not username.startswith("@"):
@@ -63,14 +69,16 @@ async def ws_handler(websocket):
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
-        CONNECTED_WEBSOCKETS.remove(websocket)
+        CONNECTED_WEBSOCKETS.discard(websocket)
+
+async def main_ws():
+    async with websockets.serve(ws_handler, "127.0.0.1", 8765):
+        await asyncio.Future()  # Menjaga server tetap berjalan
 
 def run_backend():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    start_server = websockets.serve(ws_handler, "127.0.0.1", 8765)
-    loop.run_until_complete(start_server)
-    loop.run_forever()
+    loop.run_until_complete(main_ws())
 
 # --- TAMPILAN KIVY / WEBVIEW ---
 class TikTokLiveApp(App):
@@ -85,11 +93,21 @@ class TikTokLiveApp(App):
     @run_on_ui_thread
     def start_webview(self):
         webview = WebView(activity)
-        webview.getSettings().setJavaScriptEnabled(True)
-        webview.getSettings().setDomStorageEnabled(True)
+        settings = webview.getSettings()
+        
+        # Pengaturan Wajib untuk Komunikasi WebSocket dari file://
+        settings.setJavaScriptEnabled(True)
+        settings.setDomStorageEnabled(True)
+        settings.setAllowFileAccess(True)
+        settings.setAllowFileAccessFromFileURLs(True)
+        settings.setAllowUniversalAccessFromFileURLs(True)
+        
         webview.setWebViewClient(WebViewClient())
-        # Membuka file index.html lokal
-        webview.loadUrl("file:///android_asset/index.html")
+        
+        # Mengambil lokasi absolut file index.html di ruang aplikasi Android
+        html_path = os.path.abspath("index.html")
+        webview.loadUrl(f"file://{html_path}")
+        
         activity.setContentView(webview)
 
 if __name__ == "__main__":
