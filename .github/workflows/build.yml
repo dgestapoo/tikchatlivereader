@@ -24,18 +24,21 @@ jobs:
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
 
-    - name: Install dependencies
+    - name: Install System Dependencies
       run: |
         sudo apt update
         sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev ccache
         python3.10 -m pip install --upgrade pip setuptools
         python3.10 -m pip install "cython<3.0.0" buildozer
 
-    - name: Accept Android SDK Licenses
+    - name: Auto Accept All Android Licenses
       run: |
         mkdir -p ~/.android
         touch ~/.android/repositories.cfg
-        yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        echo "2482556722006f65303680b4074e05b57770e6d3" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        echo "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+        echo "d975f75130fa2ad14709e3b38b1e1869a309075a" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
 
     - name: Build APK with Buildozer
       run: |
