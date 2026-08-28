@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TikTok Live Reader</title>
+<style>
+*{box-sizing:border-box}body{font-family:sans-serif;background:#121212;color:#fff;padding:15px;margin:0}.container{width:100%;max-width:600px;margin:0 auto}h3{text-align:center;margin:5px 0 15px}input,button{width:100%;padding:14px;margin-top:8px;border-radius:8px;border:none;font-size:16px}input{background:#222;color:#fff;border:1px solid #444;outline:none}input:focus{border-color:#25f4ee}button{background:#fe2c55;color:#fff;font-weight:bold}button:disabled{opacity:.6}#status{margin-top:10px;font-size:13px;color:#aaa;text-align:center}#chat-box{height:60vh;min-height:280px;overflow-y:auto;background:#1e1e1e;border-radius:8px;padding:10px;margin-top:15px;border:1px solid #333}.msg{margin-bottom:8px;font-size:14px;line-height:1.4;word-break:break-word}.user{color:#25f4ee;font-weight:bold}.system{color:#ff0;font-style:italic}.follow{color:#fe2c55;font-weight:bold}
+</style>
+</head>
+<body>
+<div class="container">
+<h3>TikTok Reader APK</h3>
+<input type="text" id="username" placeholder="Masukkan Username (@user)" autocomplete="off" autocapitalize="none">
+<button id="start-button" onclick="startReader()">Start</button>
+<div id="status">Menghubungkan ke server lokal...</div>
+<div id="chat-box"></div>
+</div>
+<script>
+let ws=null,reconnectTimer=null;const synth=window.speechSynthesis;const usernameInput=document.getElementById("username");const startButton=document.getElementById("start-button");const statusBox=document.getElementById("status");const chatBox=document.getElementById("chat-box");
+function setStatus(text){statusBox.textContent=text}
+function appendMessage(type,user,message){const div=document.createElement("div");div.className="msg";if(type==="chat"){const s=document.createElement("span");s.className="user";s.textContent=`${user}: `;div.appendChild(s);div.appendChild(document.createTextNode(message));speak(`${user} bilang, ${message}`)}else if(type==="follow"){const s=document.createElement("span");s.className="follow";s.textContent="[FOLLOW] ";div.appendChild(s);div.appendChild(document.createTextNode(`${user} mengikuti!`));speak(`Terima kasih ${user} sudah mengikuti`)}else{const s=document.createElement("span");s.className="system";s.textContent=`[SYSTEM] ${message}`;div.appendChild(s)}chatBox.appendChild(div);chatBox.scrollTop=chatBox.scrollHeight}
+function connectWS(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return;setStatus("Menghubungkan ke server lokal...");try{ws=new WebSocket("ws://127.0.0.1:8765")}catch(e){setStatus("Gagal membuat koneksi WebSocket.");scheduleReconnect();return}ws.onopen=()=>{setStatus("Server lokal terhubung.");startButton.disabled=false};ws.onmessage=e=>{try{const d=JSON.parse(e.data);appendMessage(d.type||"system",d.user||"System",d.message||"")}catch(err){console.error("Pesan WebSocket tidak valid:",err)}};ws.onerror=()=>setStatus("Koneksi server lokal bermasalah.");ws.onclose=()=>{startButton.disabled=true;setStatus("Server lokal terputus. Mencoba lagi...");scheduleReconnect()}}
+function scheduleReconnect(){if(reconnectTimer!==null)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectWS()},2000)}
+function startReader(){const user=usernameInput.value.trim();if(!user){appendMessage("system","System","Masukkan username TikTok terlebih dahulu.");usernameInput.focus();return}if(!ws||ws.readyState!==WebSocket.OPEN){appendMessage("system","System","Server lokal belum terhubung.");connectWS();return}ws.send(JSON.stringify({action:"start",username:user}));setStatus(`Meminta koneksi ke ${user}...`)}
+function speak(text){if(!synth||!text)return;synth.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="id-ID";u.rate=1.1;synth.speak(u)}
+usernameInput.addEventListener("keydown",e=>{if(e.key==="Enter")startReader()});window.addEventListener("load",()=>{startButton.disabled=true;connectWS()});
+</script>
+</body>
+</html>
