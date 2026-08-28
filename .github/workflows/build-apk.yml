@@ -1,82 +1,104 @@
 name: Build Android APK
 
 on:
-  push:
-    branches:
-      - main
-      - master
-  workflow_dispatch:
+push:
+branches:
+- main
+- master
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
+group: android-apk-${{ github.ref }}
+cancel-in-progress: true
 
 jobs:
-  build-apk:
-    name: Build Debug APK
-    runs-on: ubuntu-22.04
+build-apk:
+name: Build Debug APK
+runs-on: ubuntu-22.04
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.11"
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+  - name: Set up Java 17
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: "17"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            zip \
-            unzip \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            cmake \
-            libltdl-dev \
-            libffi-dev \
-            libssl-dev
+  - name: Install system dependencies
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y \
+        git \
+        zip \
+        unzip \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config \
+        cmake \
+        libltdl-dev \
+        libffi-dev \
+        libssl-dev
 
-      - name: Install Python build tools
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install buildozer
+  - name: Set up Android SDK
+    uses: android-actions/setup-android@v3
 
-      - name: Show tool versions
-        run: |
-          python --version
-          java -version
-          buildozer --version
+  - name: Install Android SDK packages
+    run: |
+      sdkmanager "platform-tools"
+      sdkmanager "platforms;android-35"
+      sdkmanager "build-tools;35.0.0"
 
-      - name: Build debug APK
-        env:
-          BUILDOZER_WARN_ON_ROOT: "1"
-        run: |
-          buildozer -v android debug
+  - name: Accept Android SDK licenses
+    run: |
+      yes | sdkmanager --licenses || true
 
-      - name: List generated files
-        if: always()
-        run: |
-          echo "Contents of bin/:"
-          find bin -maxdepth 2 -type f -print 2>/dev/null || true
+  - name: Install Python build tools
+    run: |
+      python -m pip install --upgrade pip setuptools wheel
+      python -m pip install buildozer
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tiktok-live-reader-debug-${{ github.run_number }}
-          path: bin/*.apk
-          if-no-files-found: error
-          retention-days: 14
+  - name: Show tool versions
+    run: |
+      python --version
+      java -version
+      buildozer --version
+      echo "ANDROID_HOME=$ANDROID_HOME"
+      echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+      sdkmanager --list_installed | head -100
+
+  - name: Clean previous Buildozer state
+    run: |
+      rm -rf .buildozer
+      rm -rf bin
+
+  - name: Build debug APK
+    env:
+      BUILDOZER_WARN_ON_ROOT: "1"
+      ACCEPT_ANDROID_SDK_LICENSE: "1"
+    run: |
+      yes | buildozer -v android debug
+
+  - name: List generated files
+    if: always()
+    run: |
+      echo "Contents of bin/:"
+      find bin -maxdepth 2 -type f -print 2>/dev/null || true
+
+  - name: Upload APK artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: tiktok-live-reader-debug-${{ github.run_number }}
+      path: bin/*.apk
+      if-no-files-found: error
+      retention-days: 14
