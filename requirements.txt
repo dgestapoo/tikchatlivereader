@@ -1,4 +1,4 @@
-TikTokLive
-websockets
+TikTokLive==7.0.0
+websockets==15.0.1
 kivy
 pyjnius
