@@ -3,12 +3,13 @@ title = TikTok Live Reader
 package.name = tiktoklivereader
 package.domain = org.tiktokreader
 source.dir = .
-source.include_exts = py,png,jpg,jpeg,kv,atlas,html
+source.include_exts = py,png,jpg,jpeg,kv,atlas,html,xml
 version = 1.0
 requirements = python3,kivy,pyjnius,TikTokLive==7.0.0,websockets==15.0.1
 android.permissions = INTERNET
 android.api = 35
 android.minapi = 23
+android.extra_manifest_xml = %(source.dir)s/android/extra_manifest.xml
 icon.filename = %(source.dir)s/icon.png
 orientation = portrait
 
