@@ -1,4 +1,2 @@
 TikTokLive==7.0.0
-websockets==15.0.1
-kivy
-pyjnius
+kivy==2.3.1
