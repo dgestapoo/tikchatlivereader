@@ -13,6 +13,7 @@ from kivy.utils import platform
 if platform == "android":
     from android.runnable import run_on_ui_thread
     from jnius import autoclass
+
     WebView = autoclass("android.webkit.WebView")
     WebViewClient = autoclass("android.webkit.WebViewClient")
     activity = autoclass("org.kivy.android.PythonActivity").mActivity
@@ -22,6 +23,7 @@ else:
             return func(*args, **kwargs)
         return wrapper
 
+
 WS_HOST = "127.0.0.1"
 WS_PORT = 8765
 
@@ -29,30 +31,28 @@ connected_websockets = set()
 tiktok_task: Optional[asyncio.Task] = None
 tiktok_client: Optional[TikTokLiveClient] = None
 
+
 async def send_to_html(data_type: str, user: str = "", message: str = "") -> None:
     if not connected_websockets:
         return
 
-    payload = json.dumps({
-        "type": data_type,
-        "user": user,
-        "message": message,
-    }, ensure_ascii=False)
+    payload = json.dumps(
+        {"type": data_type, "user": user, "message": message},
+        ensure_ascii=False,
+    )
 
-    sockets = list(connected_websockets)
-
-    async def send_one(ws):
+    async def send_one(websocket):
         try:
-            await ws.send(payload)
+            await websocket.send(payload)
         except Exception:
-            connected_websockets.discard(ws)
+            connected_websockets.discard(websocket)
 
-    await asyncio.gather(*(send_one(ws) for ws in sockets))
+    await asyncio.gather(*(send_one(ws) for ws in list(connected_websockets)))
 
 
 def normalize_username(username: str) -> str:
-    username = (username or "").strip()
-    return username if username.startswith("@") else f"@{username}"
+    """TikTokLive expects unique_id without an @ prefix."""
+    return (username or "").strip().lstrip("@").strip()
 
 
 async def stop_tiktok() -> None:
@@ -84,7 +84,7 @@ async def start_tiktok(username: str) -> None:
     global tiktok_task, tiktok_client
 
     username = normalize_username(username)
-    if username == "@":
+    if not username:
         await send_to_html("system", "System", "Username TikTok belum diisi.")
         return
 
@@ -94,10 +94,11 @@ async def start_tiktok(username: str) -> None:
     tiktok_client = client
     current_task = asyncio.current_task()
     tiktok_task = current_task
+    display_username = f"@{username}"
 
     @client.on(ConnectEvent)
     async def on_connect(event: ConnectEvent):
-        await send_to_html("system", "System", f"Terhubung ke live {event.unique_id}")
+        await send_to_html("system", "System", f"Terhubung ke live {display_username}")
 
     @client.on(CommentEvent)
     async def on_comment(event: CommentEvent):
@@ -113,14 +114,14 @@ async def start_tiktok(username: str) -> None:
 
     @client.on(DisconnectEvent)
     async def on_disconnect(_: DisconnectEvent):
-        await send_to_html("system", "System", f"Koneksi live {username} terputus.")
+        await send_to_html("system", "System", f"Koneksi live {display_username} terputus.")
 
     try:
         await client.connect()
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        await send_to_html("system", "Error", f"Gagal terhubung ke {username}: {exc}")
+        await send_to_html("system", "Error", f"Gagal terhubung ke {display_username}: {exc}")
     finally:
         if tiktok_client is client:
             tiktok_client = None
@@ -134,14 +135,14 @@ async def ws_handler(websocket) -> None:
         async for raw_message in websocket:
             try:
                 data = json.loads(raw_message)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 await send_to_html("system", "Error", "Pesan dari WebView bukan JSON yang valid.")
                 continue
 
             action = data.get("action")
             if action == "start":
                 username = str(data.get("username", "")).strip()
-                if not username:
+                if not normalize_username(username):
                     await send_to_html("system", "System", "Masukkan username TikTok terlebih dahulu.")
                     continue
                 asyncio.create_task(start_tiktok(username))
