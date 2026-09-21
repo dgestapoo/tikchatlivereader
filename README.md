@@ -1,58 +1,20 @@
 # TikTok Live Reader
 
-Aplikasi Android berbasis Kivy dengan frontend HTML/WebView.
+Versi native Android berbasis Kivy. Versi ini tidak menggunakan WebView, HTML, atau WebSocket lokal.
 
-## Arsitektur
+## Fitur
 
-```text
-TikTok Live
-    ↓
-TikTokLiveClient (main.py)
-    ↓
-WebSocket lokal
-127.0.0.1:8765
-    ↓
-index.html / WebView
-    ↓
-Tampilan chat + Text-to-Speech
-```
+- UI native Kivy
+- Koneksi TikTokLive berjalan di thread dan event loop asyncio terpisah
+- Update UI selalu dikirim kembali ke thread utama Kivy melalui `Clock`
+- Mendukung Android 6+ (API 23), termasuk Android 13/14
+- Hanya membutuhkan permission `INTERNET` dan `WAKE_LOCK`
 
-Server WebSocket lokal adalah bagian dari desain aplikasi dan berjalan di perangkat Android yang sama.
+## Build dengan Linux/macOS
 
-## Build lokal
+Instal Python 3.11, Java 17, Android SDK/NDK, lalu:
 
 ```bash
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install buildozer
 buildozer -v android debug
-```
-
-APK akan dibuat di:
-
-```text
-bin/
-```
-
-## GitHub Actions
-
-### Debug
-
-Push ke branch `main` atau `master` akan menjalankan:
-
-```text
-.github/workflows/build-check.yml
-.github/workflows/build-apk.yml
-```
-
-APK debug tersedia pada bagian **Artifacts** dari workflow `Build Android APK`.
-
-### Release
-
-Buat tag versi:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Workflow release akan membangun APK dan membuat GitHub Release.
-
-> Catatan: workflow release di atas menghasilkan APK unsigned/universal release. Untuk distribusi Play Store, tambahkan signing keystore melalui GitHub Secrets.
