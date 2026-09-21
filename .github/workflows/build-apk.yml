@@ -1,7 +1,3 @@
-
-6) Workflow GitHub Actions untuk build APK:
-
-```yaml
 name: Build Android APK
 
 on:
