@@ -9,6 +9,7 @@ requirements = python3,kivy==2.3.1,TikTokLive==7.0.0
 android.permissions = INTERNET,WAKE_LOCK
 android.api = 35
 android.minapi = 23
+android.ndk = 25b
 android.archs = arm64-v8a,armeabi-v7a
 icon.filename = %(source.dir)s/icon.png
 orientation = portrait
