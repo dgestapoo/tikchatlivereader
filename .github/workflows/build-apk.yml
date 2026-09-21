@@ -2,7 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -10,7 +12,9 @@ permissions:
 
 jobs:
   build-apk:
+    name: Build Debug APK
     runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,26 +33,58 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config cmake libltdl-dev libffi-dev libssl-dev
+          sudo apt-get install -y \
+            git \
+            zip \
+            unzip \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            cmake \
+            libltdl-dev \
+            libffi-dev \
+            libssl-dev
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: "13114758"
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
-      - name: Install Android SDK packages
+      - name: Accept Android SDK licenses
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses || true
+
+      - name: Check Android SDK
+        run: |
+          sdkmanager --list_installed
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install buildozer
 
+      - name: Check Python syntax
+        run: |
+          python -m py_compile main.py
+
       - name: Build debug APK
         env:
           BUILDOZER_WARN_ON_ROOT: "1"
           ACCEPT_ANDROID_SDK_LICENSE: "1"
-        run: buildozer -v android debug
+        run: |
+          buildozer -v android debug
+
+      - name: List generated APK
+        if: always()
+        run: |
+          find bin -maxdepth 2 -type f -print 2>/dev/null || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -56,3 +92,4 @@ jobs:
           name: tiktok-live-reader-debug-${{ github.run_number }}
           path: bin/*.apk
           if-no-files-found: error
+          retention-days: 14
