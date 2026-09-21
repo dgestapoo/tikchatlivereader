@@ -1,197 +1,191 @@
 import asyncio
-import json
 import threading
 from typing import Optional
 
-import websockets
-from TikTokLive import TikTokLiveClient
-from TikTokLive.events import ConnectEvent, DisconnectEvent, CommentEvent, FollowEvent
-
 from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.metrics import dp
+from kivy.properties import StringProperty
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
 from kivy.utils import platform
 
-if platform == "android":
-    from android.runnable import run_on_ui_thread
-    from jnius import autoclass
-
-    WebView = autoclass("android.webkit.WebView")
-    WebViewClient = autoclass("android.webkit.WebViewClient")
-    activity = autoclass("org.kivy.android.PythonActivity").mActivity
-else:
-    def run_on_ui_thread(func):
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
+from TikTokLive import TikTokLiveClient
+from TikTokLive.events import CommentEvent, ConnectEvent, DisconnectEvent, FollowEvent
 
 
-WS_HOST = "127.0.0.1"
-WS_PORT = 8765
+class ChatRow(Label):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.text_size = (None, None)
+        self.padding = (dp(10), dp(8))
+        self.bind(width=self._update_text_size, texture_size=self._update_height)
 
-connected_websockets = set()
-tiktok_task: Optional[asyncio.Task] = None
-tiktok_client: Optional[TikTokLiveClient] = None
+    def _update_text_size(self, *_):
+        self.text_size = (max(0, self.width - dp(20)), None)
+
+    def _update_height(self, *_):
+        self.height = max(dp(38), self.texture_size[1] + dp(16))
 
 
-async def send_to_html(data_type: str, user: str = "", message: str = "") -> None:
-    if not connected_websockets:
-        return
+class TikTokReaderService:
+    def __init__(self, on_event):
+        self.on_event = on_event
+        self.thread: Optional[threading.Thread] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.client: Optional[TikTokLiveClient] = None
+        self.stop_event = threading.Event()
+        self.username = ""
 
-    payload = json.dumps(
-        {"type": data_type, "user": user, "message": message},
-        ensure_ascii=False,
-    )
+    def start(self, username: str) -> bool:
+        if self.thread and self.thread.is_alive():
+            return False
+        self.username = username.strip().lstrip("@").strip()
+        if not self.username:
+            return False
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._run_thread, name="TikTokLive", daemon=True)
+        self.thread.start()
+        return True
 
-    async def send_one(websocket):
+    def stop(self):
+        self.stop_event.set()
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._disconnect(), self.loop)
+
+    def _run_thread(self):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         try:
-            await websocket.send(payload)
-        except Exception:
-            connected_websockets.discard(websocket)
+            self.loop.run_until_complete(self._connect())
+        finally:
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            self.loop.close()
+            self.loop = None
+            self.client = None
 
-    await asyncio.gather(*(send_one(ws) for ws in list(connected_websockets)))
-
-
-def normalize_username(username: str) -> str:
-    """TikTokLive expects unique_id without an @ prefix."""
-    return (username or "").strip().lstrip("@").strip()
-
-
-async def stop_tiktok() -> None:
-    global tiktok_task, tiktok_client
-
-    client = tiktok_client
-    task = tiktok_task
-    tiktok_client = None
-    tiktok_task = None
-
-    if client is not None:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-
-    if task is not None and task is not asyncio.current_task():
-        if not task.done():
-            task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
-
-
-async def start_tiktok(username: str) -> None:
-    global tiktok_task, tiktok_client
-
-    username = normalize_username(username)
-    if not username:
-        await send_to_html("system", "System", "Username TikTok belum diisi.")
-        return
-
-    await stop_tiktok()
-
-    client = TikTokLiveClient(unique_id=username)
-    tiktok_client = client
-    current_task = asyncio.current_task()
-    tiktok_task = current_task
-    display_username = f"@{username}"
-
-    @client.on(ConnectEvent)
-    async def on_connect(event: ConnectEvent):
-        await send_to_html("system", "System", f"Terhubung ke live {display_username}")
-
-    @client.on(CommentEvent)
-    async def on_comment(event: CommentEvent):
-        comment = (event.comment or "").strip()
-        nickname = getattr(event.user, "nickname", "") or "Unknown"
-        if comment:
-            await send_to_html("chat", nickname, comment)
-
-    @client.on(FollowEvent)
-    async def on_follow(event: FollowEvent):
-        nickname = getattr(event.user, "nickname", "") or "Unknown"
-        await send_to_html("follow", nickname, "mengikuti anda")
-
-    @client.on(DisconnectEvent)
-    async def on_disconnect(_: DisconnectEvent):
-        await send_to_html("system", "System", f"Koneksi live {display_username} terputus.")
-
-    try:
-        await client.connect()
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        await send_to_html("system", "Error", f"Gagal terhubung ke {display_username}: {exc}")
-    finally:
-        if tiktok_client is client:
-            tiktok_client = None
-        if tiktok_task is current_task:
-            tiktok_task = None
-
-
-async def ws_handler(websocket) -> None:
-    connected_websockets.add(websocket)
-    try:
-        async for raw_message in websocket:
+    async def _disconnect(self):
+        if self.client is not None:
             try:
-                data = json.loads(raw_message)
-            except (json.JSONDecodeError, TypeError):
-                await send_to_html("system", "Error", "Pesan dari WebView bukan JSON yang valid.")
-                continue
+                await self.client.disconnect()
+            except Exception:
+                pass
 
-            action = data.get("action")
-            if action == "start":
-                username = str(data.get("username", "")).strip()
-                if not normalize_username(username):
-                    await send_to_html("system", "System", "Masukkan username TikTok terlebih dahulu.")
-                    continue
-                asyncio.create_task(start_tiktok(username))
-            elif action == "stop":
-                await stop_tiktok()
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    except Exception as exc:
-        print(f"WebSocket handler error: {exc}")
-    finally:
-        connected_websockets.discard(websocket)
+    async def _connect(self):
+        self.client = TikTokLiveClient(unique_id=self.username)
+        display_name = f"@{self.username}"
+
+        @self.client.on(ConnectEvent)
+        async def on_connect(event: ConnectEvent):
+            self.emit("status", f"Terhubung ke live {display_name}")
+
+        @self.client.on(CommentEvent)
+        async def on_comment(event: CommentEvent):
+            comment = (event.comment or "").strip()
+            nickname = getattr(event.user, "nickname", "") or "Unknown"
+            if comment:
+                self.emit("chat", f"{nickname}: {comment}")
+
+        @self.client.on(FollowEvent)
+        async def on_follow(event: FollowEvent):
+            nickname = getattr(event.user, "nickname", "") or "Unknown"
+            self.emit("follow", f"{nickname} mengikuti Anda")
+
+        @self.client.on(DisconnectEvent)
+        async def on_disconnect(_: DisconnectEvent):
+            self.emit("status", f"Koneksi {display_name} terputus")
+
+        try:
+            await self.client.connect()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.emit("error", f"Gagal terhubung ke {display_name}: {exc}")
+
+    def emit(self, kind: str, message: str):
+        Clock.schedule_once(lambda _dt: self.on_event(kind, message), 0)
 
 
-async def backend_main() -> None:
-    async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
-        print(f"Local WebSocket server: ws://{WS_HOST}:{WS_PORT}")
-        await asyncio.Future()
+class TikTokReaderApp(App):
+    status = StringProperty("Siap")
 
-
-def run_backend() -> None:
-    try:
-        asyncio.run(backend_main())
-    except Exception as exc:
-        print(f"Backend stopped: {exc}")
-
-
-class TikTokLiveApp(App):
     def build(self):
-        self.backend_thread = threading.Thread(
-            target=run_backend,
-            name="TikTokBackend",
-            daemon=True,
-        )
-        self.backend_thread.start()
+        Window.softinput_mode = "below_target"
+        self.service = TikTokReaderService(self.handle_service_event)
 
-        if platform == "android":
-            self.start_webview()
-        return None
+        root = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
+        title = Label(text="[b]TikTok Live Reader[/b]", markup=True, font_size="22sp", size_hint_y=None, height=dp(48))
+        root.add_widget(title)
 
-    @run_on_ui_thread
-    def start_webview(self):
-        webview = WebView(activity)
-        settings = webview.getSettings()
-        settings.setJavaScriptEnabled(True)
-        settings.setDomStorageEnabled(True)
-        webview.setWebViewClient(WebViewClient())
-        webview.loadUrl("file:///android_asset/index.html")
-        activity.setContentView(webview)
+        form = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+        self.username_input = TextInput(hint_text="Username TikTok, contoh: @username", multiline=False, write_tab=False)
+        self.username_input.bind(on_text_validate=lambda *_: self.start_reader())
+        form.add_widget(self.username_input)
+        self.start_button = Button(text="Mulai", size_hint_x=None, width=dp(92))
+        self.start_button.bind(on_release=lambda *_: self.start_reader())
+        form.add_widget(self.start_button)
+        self.stop_button = Button(text="Berhenti", size_hint_x=None, width=dp(92), disabled=True)
+        self.stop_button.bind(on_release=lambda *_: self.stop_reader())
+        form.add_widget(self.stop_button)
+        root.add_widget(form)
+
+        self.status_label = Label(text=self.status, color=(0.4, 0.9, 0.5, 1), size_hint_y=None, height=dp(32), halign="left", valign="middle")
+        self.status_label.bind(size=lambda *_: setattr(self.status_label, "text_size", self.status_label.size))
+        root.add_widget(self.status_label)
+
+        scroll = ScrollView(do_scroll_x=False)
+        self.chat_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
+        self.chat_box.bind(minimum_height=self.chat_box.setter("height"))
+        scroll.add_widget(self.chat_box)
+        root.add_widget(scroll)
+        self.scroll = scroll
+        return root
+
+    def start_reader(self):
+        username = self.username_input.text.strip()
+        if not username:
+            self.handle_service_event("error", "Masukkan username TikTok terlebih dahulu.")
+            return
+        if self.service.start(username):
+            self.start_button.disabled = True
+            self.stop_button.disabled = False
+            self.username_input.disabled = True
+            self.handle_service_event("status", f"Menghubungkan ke @{username.lstrip('@')}...")
+
+    def stop_reader(self):
+        self.service.stop()
+        self.start_button.disabled = False
+        self.stop_button.disabled = True
+        self.username_input.disabled = False
+        self.handle_service_event("status", "Koneksi dihentikan")
+
+    def handle_service_event(self, kind: str, message: str):
+        self.status = message if kind in ("status", "error") else self.status
+        self.status_label.text = self.status
+        if kind == "error":
+            self.add_row("ERROR", message, (1, 0.35, 0.35, 1))
+        elif kind == "chat":
+            self.add_row("CHAT", message, (1, 1, 1, 1))
+        elif kind == "follow":
+            self.add_row("FOLLOW", message, (0.5, 0.85, 1, 1))
+
+    def add_row(self, prefix: str, message: str, color):
+        row = ChatRow(text=f"[{prefix}] {message}", color=color)
+        self.chat_box.add_widget(row)
+        Clock.schedule_once(lambda _dt: setattr(self.scroll, "scroll_y", 0), 0)
+
+    def on_stop(self):
+        self.service.stop()
 
 
 if __name__ == "__main__":
-    TikTokLiveApp().run()
+    TikTokReaderApp().run()
